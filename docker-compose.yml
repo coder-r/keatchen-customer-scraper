@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  keatchen-monitor:
+    build: .
+    container_name: keatchen-customer-monitor
+    restart: unless-stopped
+    environment:
+      - KEATCHEN_URL=https://keatchenunited.app4food.co.uk
+      - KEATCHEN_USERNAME=admin@keatchen
+      - KEATCHEN_PASSWORD=keatchen22
+      - HEADLESS=true
+      - DATA_DIR=/app/data
+      - LOG_LEVEL=INFO
+      - RUN_ONCE=false  # Set to true for one-time run
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"  # For web dashboard
+    healthcheck:
+      test: ["CMD", "python", "health_check.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - keatchen-network
+
+  keatchen-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: keatchen-dashboard
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data:ro
+    ports:
+      - "8081:8081"
+    depends_on:
+      - keatchen-monitor
+    networks:
+      - keatchen-network
+
+networks:
+  keatchen-network:
+    driver: bridge
+
+volumes:
+  keatchen-data:
+    driver: local

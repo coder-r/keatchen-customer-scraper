@@ -1,0 +1,19 @@
+# Dashboard service
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install dashboard dependencies
+COPY requirements-dashboard.txt .
+RUN pip install --no-cache-dir -r requirements-dashboard.txt
+
+# Copy dashboard files
+COPY dashboard.py .
+COPY templates/ templates/
+COPY static/ static/
+
+# Expose port
+EXPOSE 8081
+
+# Run dashboard
+CMD ["python", "dashboard.py"]

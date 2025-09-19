@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KEATchen Customer Monitor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #2c5aa0; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-number { font-size: 2em; font-weight: bold; color: #2c5aa0; }
+        .stat-label { color: #666; margin-top: 5px; }
+        .section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .new-customer { background: #e8f5e8; border-left: 4px solid #4caf50; padding: 10px; margin: 10px 0; }
+        .scan-log { background: #f9f9f9; padding: 8px; margin: 5px 0; border-radius: 4px; font-family: monospace; }
+        .success { color: #4caf50; }
+        .error { color: #f44336; }
+        .refresh-btn { background: #2c5aa0; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        .refresh-btn:hover { background: #1e3f73; }
+    </style>
+    <script>
+        function refreshData() {
+            location.reload();
+        }
+        
+        // Auto-refresh every 5 minutes
+        setInterval(refreshData, 300000);
+        
+        // Real-time updates
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                document.getElementById('total-customers').textContent = data.total_customers;
+                document.getElementById('new-today').textContent = data.new_today;
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            }
+        }
+        
+        // Update stats every minute
+        setInterval(updateStats, 60000);
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>🥘 KEATchen Customer Monitor Dashboard</h1>
+        <p>Real-time customer database monitoring and new customer detection</p>
+        <p>Last updated: {{ last_update }}</p>
+        <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Now</button>
+    </div>
+    
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number" id="total-customers">{{ total_customers }}</div>
+            <div class="stat-label">Total Customers</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="new-today" style="color: #4caf50;">{{ new_today }}</div>
+            <div class="stat-label">New Today</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="color: #ff9800;">{{ new_week }}</div>
+            <div class="stat-label">New This Week</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" style="color: #2196f3;">27</div>
+            <div class="stat-label">Pages Monitored</div>
+        </div>
+    </div>
+    
+    {% if new_today > 0 %}
+    <div class="section">
+        <h2>🆕 New Customers Today</h2>
+        <div id="new-customers-list">
+            <!-- New customers will be loaded here -->
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="section">
+        <h2>📊 Recent Monitoring Activity</h2>
+        {% for scan in recent_scans %}
+        <div class="scan-log">
+            <span class="{% if scan[3] > 0 %}error{% else %}success{% endif %}">
+                {{ scan[0] }} - {{ scan[1] }} new customers found 
+                ({{ scan[2] }}s execution time)
+                {% if scan[3] > 0 %} - {{ scan[3] }} errors{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="section">
+        <h2>🔗 Quick Actions</h2>
+        <p>
+            <a href="/api/customers" target="_blank">📄 View All Customers JSON</a> |
+            <a href="/api/new-customers" target="_blank">🆕 View New Customers JSON</a> |
+            <a href="/api/stats" target="_blank">📊 View Statistics JSON</a>
+        </p>
+    </div>
+    
+    <script>
+        // Load new customers
+        async function loadNewCustomers() {
+            try {
+                const response = await fetch('/api/new-customers');
+                const customers = await response.json();
+                
+                const container = document.getElementById('new-customers-list');
+                if (customers.length > 0) {
+                    container.innerHTML = customers.map(customer => `
+                        <div class="new-customer">
+                            <strong>${customer.first_name} ${customer.last_name}</strong><br>
+                            📧 ${customer.email}<br>
+                            📱 ${customer.mobile}<br>
+                            🕒 Detected: ${new Date(customer.detected_at).toLocaleString()}
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p>No new customers detected today</p>';
+                }
+            } catch (error) {
+                console.error('Error loading new customers:', error);
+            }
+        }
+        
+        // Load new customers on page load
+        document.addEventListener('DOMContentLoaded', loadNewCustomers);
+    </script>
+</body>
+</html>
