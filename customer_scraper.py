@@ -80,24 +80,76 @@ class KEATchenCustomerScraper:
             page.goto(self.login_url)
             page.wait_for_load_state('networkidle')
             
-            # Enter credentials
-            page.fill('input[placeholder*="email"]', self.username)
-            page.fill('input[type="password"]', self.password)
+            # Enter credentials  
+            email_field = page.query_selector('input[placeholder*="email"], input[type="email"], input[name*="email"]')
+            if email_field:
+                email_field.fill(self.username)
+            else:
+                # Try alternative selector
+                page.fill('input:nth-of-type(1)', self.username)
+            
+            password_field = page.query_selector('input[type="password"]')
+            if password_field:
+                password_field.fill(self.password)
             
             # Click login
             page.click('button:has-text("Log In")')
             page.wait_for_load_state('networkidle')
             
-            # Check if login successful
-            if "admin/" in page.url:
-                print("Login successful!")
+            # Check if login successful - look for logout link or admin dashboard
+            current_url = page.url
+            print(f"Current URL after login: {current_url}")
+            
+            if "admin/" in current_url and page.query_selector('a:has-text("Logout")'):
+                print("✅ Login successful!")
                 return True
             else:
-                print("Login failed!")
+                print("❌ Login failed - checking page content...")
+                print(f"Page title: {page.title()}")
                 return False
                 
         except Exception as e:
-            print(f"Login error: {e}")
+            print(f"❌ Login error: {e}")
+            return False
+    
+    def verify_customer_page(self, page: Page) -> bool:
+        """Verify we're on the correct customer page"""
+        try:
+            current_url = page.url
+            page_title = page.title()
+            
+            print(f"Verifying customer page...")
+            print(f"Current URL: {current_url}")
+            print(f"Page title: {page_title}")
+            
+            # Check URL contains Customer
+            if "/admin/Customer" not in current_url:
+                print("❌ Not on customer page - URL check failed")
+                return False
+            
+            # Check for customer table
+            table = page.query_selector('table')
+            if not table:
+                print("❌ Customer table not found")
+                return False
+            
+            # Check for customer data in table
+            customer_rows = page.query_selector_all('tbody tr')
+            if len(customer_rows) < 2:  # Should have at least header + one customer
+                print("❌ No customer data found in table")
+                return False
+            
+            # Check for pagination info
+            pagination = page.query_selector('text*="of 538"')
+            if pagination:
+                print("✅ Pagination found - confirmed customer page")
+                return True
+            
+            print("✅ Customer page verified")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error verifying customer page: {e}")
             return False
     
     def extract_customer_basic_info(self, row_element) -> Optional[Dict]:
@@ -105,6 +157,11 @@ class KEATchenCustomerScraper:
         try:
             cells = row_element.query_selector_all('td')
             if len(cells) < 6:
+                return None
+                
+            # Skip pagination rows
+            row_text = row_element.inner_text()
+            if "of 27" in row_text or "Firstname" in row_text:
                 return None
                 
             customer = {
@@ -230,25 +287,38 @@ class KEATchenCustomerScraper:
         try:
             # Wait for table to load
             page.wait_for_selector('table')
+            print("Table found, looking for customer rows...")
             
-            # Find all customer rows (skip header)
+            # Find all customer rows - use more specific selector
             customer_rows = page.query_selector_all('tbody tr')
+            print(f"Found {len(customer_rows)} table rows")
             
             for i, row in enumerate(customer_rows):
                 try:
                     # Extract basic info
                     customer = self.extract_customer_basic_info(row)
                     if not customer:
+                        print(f"Row {i+1}: Skipped (header/pagination row)")
                         continue
+                    
+                    print(f"Row {i+1}: Processing {customer['first_name']} {customer['last_name']} ({customer['email']})")
                     
                     # Check if already scraped
                     if customer['email'].lower() in self.scraped_emails:
                         print(f"Skipping {customer['email']} - already scraped")
                         continue
                     
-                    # Click Details button
-                    details_button = row.query_selector('button:has-text("Details")')
+                    # Click Details button - try multiple selectors
+                    details_button = (
+                        row.query_selector('button:has-text("Details")') or
+                        row.query_selector('td:last-child button') or
+                        row.query_selector('input[type="button"][value="Details"]') or
+                        row.query_selector('button') or
+                        row.query_selector('input[type="submit"]')
+                    )
+                    
                     if details_button:
+                        print(f"Clicking Details button for {customer['email']}")
                         details_button.click()
                         page.wait_for_load_state('networkidle')
                         
@@ -260,7 +330,7 @@ class KEATchenCustomerScraper:
                         self.scraped_emails.add(customer['email'].lower())
                         scraped_count += 1
                         
-                        print(f"Scraped customer {scraped_count}: {customer['first_name']} {customer['last_name']}")
+                        print(f"✅ Scraped customer {scraped_count}: {customer['first_name']} {customer['last_name']}")
                         
                         # Go back to customer list
                         page.go_back()
@@ -268,15 +338,17 @@ class KEATchenCustomerScraper:
                         
                         # Small delay to be respectful
                         time.sleep(1)
+                    else:
+                        print(f"❌ No Details button found for {customer['email']}")
                         
                 except Exception as e:
-                    print(f"Error processing customer {i+1}: {e}")
+                    print(f"❌ Error processing customer {i+1}: {e}")
                     continue
             
             return scraped_count
             
         except Exception as e:
-            print(f"Error scraping page: {e}")
+            print(f"❌ Error scraping page: {e}")
             return 0
     
     def scrape_all_customers(self):
@@ -293,8 +365,14 @@ class KEATchenCustomerScraper:
                     return
                 
                 # Navigate to customers page
+                print(f"Navigating to customer page: {self.customer_url}")
                 page.goto(self.customer_url)
                 page.wait_for_load_state('networkidle')
+                
+                # Verify we're on the correct page
+                if not self.verify_customer_page(page):
+                    print("❌ Failed to reach customer page. Exiting.")
+                    return
                 
                 # Get total pages info
                 pagination_text = page.query_selector('text*="of 27"')
